@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -x
+
 echo "###############################################################################"
 echo "#  MAKE SURE YOU ARE LOGGED IN:                                               #"
 echo "#  $ oc login http://console.your.openshift.com                               #"
@@ -108,8 +110,11 @@ done
 LOGGEDIN_USER=$(oc $ARG_OC_OPS whoami)
 OPENSHIFT_USER=${ARG_USERNAME:-$LOGGEDIN_USER}
 PRJ_SUFFIX=${ARG_PROJECT_SUFFIX:-`echo $OPENSHIFT_USER | sed -e 's/[-@].*//g'`}
-GITHUB_ACCOUNT=${GITHUB_ACCOUNT:-siamaksade}
-GITHUB_REF=${GITHUB_REF:-ocp-4.2}
+
+APPDEV_NAMESPACE=appdev-$PRJ_SUFFIX
+DEV_PROJECT=dev-$PRJ_SUFFIX
+STAGE_PROJECT=stage-$PRJ_SUFFIX
+EPHEMERAL=$ARG_EPHEMERAL
 
 function deploy() {
   oc $ARG_OC_OPS new-project dev-$PRJ_SUFFIX   --display-name="Tasks - Dev"
@@ -126,9 +131,9 @@ function deploy() {
     oc $ARG_OC_OPS adm policy add-role-to-user admin $ARG_USERNAME -n stage-$PRJ_SUFFIX >/dev/null 2>&1
     oc $ARG_OC_OPS adm policy add-role-to-user admin $ARG_USERNAME -n appdev-$PRJ_SUFFIX >/dev/null 2>&1
     
-    oc $ARG_OC_OPS annotate --overwrite namespace dev-$PRJ_SUFFIX   demo=openshift-cd-$PRJ_SUFFIX >/dev/null 2>&1
-    oc $ARG_OC_OPS annotate --overwrite namespace stage-$PRJ_SUFFIX demo=openshift-cd-$PRJ_SUFFIX >/dev/null 2>&1
-    oc $ARG_OC_OPS annotate --overwrite namespace appdev-$PRJ_SUFFIX  demo=openshift-cd-$PRJ_SUFFIX >/dev/null 2>&1
+    oc $ARG_OC_OPS annotate --overwrite namespace dev-$PRJ_SUFFIX   demo=openshift-dev-experience-$PRJ_SUFFIX >/dev/null 2>&1
+    oc $ARG_OC_OPS annotate --overwrite namespace stage-$PRJ_SUFFIX demo=openshift-dev-experience-$PRJ_SUFFIX >/dev/null 2>&1
+    oc $ARG_OC_OPS annotate --overwrite namespace appdev-$PRJ_SUFFIX  demo=openshift-dev-experience-$PRJ_SUFFIX >/dev/null 2>&1
 
     oc $ARG_OC_OPS adm pod-network join-projects --to=appdev-$PRJ_SUFFIX dev-$PRJ_SUFFIX stage-$PRJ_SUFFIX >/dev/null 2>&1
   fi
@@ -141,11 +146,82 @@ function deploy() {
     oc new-app jenkins-persistent -n appdev-$PRJ_SUFFIX
   fi
 
+  oc set resources dc/jenkins --limits=cpu=2,memory=2Gi --requests=cpu=100m,memory=512Mi 
+  oc label dc jenkins app=jenkins --overwrite 
+
+  # setup dev env
+  oc import-image wildfly --from=openshift/wildfly-120-centos7 --confirm -n ${DEV_PROJECT} 
+  
+  # dev
+  oc new-build --name=tasks --image-stream=wildfly:latest --binary=true -n ${DEV_PROJECT}
+  oc new-app tasks:latest --allow-missing-images -n ${DEV_PROJECT}
+  oc set triggers dc -l app=tasks --containers=tasks --from-image=tasks:latest --manual -n ${DEV_PROJECT}
+  
+  # stage
+  oc new-app tasks:stage --allow-missing-images -n ${STAGE_PROJECT}
+  oc set triggers dc -l app=tasks --containers=tasks --from-image=tasks:stage --manual -n ${STAGE_PROJECT}
+  
+  # dev project
+  oc expose dc/tasks --port=8080 -n ${DEV_PROJECT}
+  oc expose svc/tasks -n ${DEV_PROJECT}
+  oc set probe dc/tasks --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
+  oc set probe dc/tasks --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
+  oc rollout cancel dc/tasks -n ${STAGE_PROJECT}
+
+  # stage project
+  oc expose dc/tasks --port=8080 -n ${STAGE_PROJECT}
+  oc expose svc/tasks -n ${STAGE_PROJECT}
+  oc set probe dc/tasks --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
+  oc set probe dc/tasks --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
+  oc rollout cancel dc/tasks -n ${DEV_PROJECT}
+
+  # deploy gogs
+  HOSTNAME=$(oc get route jenkins -o template --template='{{.spec.host}}' | sed "s/jenkins-${APPDEV_NAMESPACE}.//g")
+  GOGS_HOSTNAME="gogs-$APPDEV_NAMESPACE.$HOSTNAME"
+
+  if [ "${EPHEMERAL}" == "true" ] ; then
+    oc new-app -f https://raw.githubusercontent.com/OpenShiftDemos/gogs-openshift-docker/master/openshift/gogs-template.yaml \
+        --param=GOGS_VERSION=0.11.34 \
+        --param=DATABASE_VERSION=9.6 \
+        --param=HOSTNAME=$GOGS_HOSTNAME \
+        --param=SKIP_TLS_VERIFY=true
+  else
+    oc new-app -f https://raw.githubusercontent.com/OpenShiftDemos/gogs-openshift-docker/master/openshift/gogs-persistent-template.yaml \
+        --param=GOGS_VERSION=0.11.34 \
+        --param=DATABASE_VERSION=9.6 \
+        --param=HOSTNAME=$GOGS_HOSTNAME \
+        --param=SKIP_TLS_VERIFY=true
+  fi
+  
+  sleep 5
+
+  if [ "${EPHEMERAL}" == "true" ] ; then
+    oc new-app -f https://raw.githubusercontent.com/siamaksade/sonarqube/master/sonarqube-template.yml --param=SONARQUBE_MEMORY_LIMIT=2Gi
+  else
+    oc new-app -f https://raw.githubusercontent.com/siamaksade/sonarqube/master/sonarqube-persistent-template.yml --param=SONARQUBE_MEMORY_LIMIT=2Gi
+  fi
+
+  oc set resources dc/sonardb --limits=cpu=200m,memory=512Mi --requests=cpu=50m,memory=128Mi
+  oc set resources dc/sonarqube --limits=cpu=1,memory=2Gi --requests=cpu=50m,memory=128Mi
+
+  if [ "${EPHEMERAL}" == "true" ] ; then
+    oc new-app -f https://raw.githubusercontent.com/OpenShiftDemos/nexus/master/nexus3-template.yaml --param=NEXUS_VERSION=3.13.0 --param=MAX_MEMORY=2Gi
+  else
+    oc new-app -f https://raw.githubusercontent.com/OpenShiftDemos/nexus/master/nexus3-persistent-template.yaml --param=NEXUS_VERSION=3.13.0 --param=MAX_MEMORY=2Gi
+  fi
+
+  oc set resources dc/nexus --requests=cpu=200m --limits=cpu=2
+
+  oc label dc sonarqube "app.kubernetes.io/part-of"="sonarqube" --overwrite
+  oc label dc sonardb "app.kubernetes.io/part-of"="sonarqube" --overwrite
+  oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
+  oc label dc nexus "app.kubernetes.io/part-of"="nexus" --overwrite
+  oc label dc gogs "app.kubernetes.io/part-of"="gogs" --overwrite
+  oc label dc gogs-postgresql "app.kubernetes.io/part-of"="gogs" --overwrite
+
   sleep 2
 
-  local template=https://raw.githubusercontent.com/$GITHUB_ACCOUNT/openshift-cd-demo/$GITHUB_REF/appdev-template.yaml
-  echo "Using template $template"
-  oc $ARG_OC_OPS new-app -f $template -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -n appdev-$PRJ_SUFFIX 
+  oc $ARG_OC_OPS new-app -f appdev-infra.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -n appdev-$PRJ_SUFFIX 
 }
 
 function make_idle() {
@@ -208,7 +284,6 @@ if [ "$LOGGEDIN_USER" == 'system:admin' ] && [ -z "$ARG_USERNAME" ] ; then
   fi
 fi
 
-pushd ~ >/dev/null
 START=`date +%s`
 
 echo_header "OpenShift AppDev Demo ($(date))"
@@ -249,7 +324,6 @@ case "$ARG_COMMAND" in
 esac
 
 set_default_project
-popd >/dev/null
 
 END=`date +%s`
 echo "(Completed in $(( ($END - $START)/60 )) min $(( ($END - $START)%60 )) sec)"
