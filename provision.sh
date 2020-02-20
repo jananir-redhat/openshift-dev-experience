@@ -117,8 +117,8 @@ STAGE_PROJECT=stage-$PRJ_SUFFIX
 EPHEMERAL=$ARG_EPHEMERAL
 
 function deploy() {
-  oc $ARG_OC_OPS new-project dev-$PRJ_SUFFIX   --display-name="Tasks - Dev"
-  oc $ARG_OC_OPS new-project stage-$PRJ_SUFFIX --display-name="Tasks - Stage"
+  oc $ARG_OC_OPS new-project dev-$PRJ_SUFFIX   --display-name="Pet Clinic - Dev"
+  oc $ARG_OC_OPS new-project stage-$PRJ_SUFFIX --display-name="Pet Clinic - Stage"
   oc $ARG_OC_OPS new-project appdev-$PRJ_SUFFIX  --display-name="AppDev"
 
   sleep 2
@@ -150,30 +150,30 @@ function deploy() {
   oc label dc jenkins app=jenkins --overwrite 
 
   # setup dev env
-  oc import-image wildfly --from=openshift/wildfly-120-centos7 --confirm -n ${DEV_PROJECT} 
+  oc import-image redhat-openjdk-18/openjdk18-openshift --from=registry.access.redhat.com/redhat-openjdk-18/openjdk18-openshift --confirm -n ${DEV_PROJECT}
   
   # dev
-  oc new-build --name=tasks --image-stream=wildfly:latest --binary=true -n ${DEV_PROJECT}
-  oc new-app tasks:latest --allow-missing-images -n ${DEV_PROJECT}
-  oc set triggers dc -l app=tasks --containers=tasks --from-image=tasks:latest --manual -n ${DEV_PROJECT}
+  oc new-build --name=petclinic --image-stream=openjdk18-openshift:latest --binary=true -n ${DEV_PROJECT}
+  oc new-app petclinic:latest --allow-missing-images -n ${DEV_PROJECT}
+  oc set triggers dc -l app=petclinic --containers=petclinic --from-image=petclinic:latest --manual -n ${DEV_PROJECT}
   
   # stage
-  oc new-app tasks:stage --allow-missing-images -n ${STAGE_PROJECT}
-  oc set triggers dc -l app=tasks --containers=tasks --from-image=tasks:stage --manual -n ${STAGE_PROJECT}
+  oc new-app petclinic:stage --allow-missing-images -n ${STAGE_PROJECT}
+  oc set triggers dc -l app=petclinic --containers=petclinic --from-image=petclinic:stage --manual -n ${STAGE_PROJECT}
   
   # dev project
-  oc expose dc/tasks --port=8080 -n ${DEV_PROJECT}
-  oc expose svc/tasks -n ${DEV_PROJECT}
-  oc set probe dc/tasks --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
-  oc set probe dc/tasks --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
-  oc rollout cancel dc/tasks -n ${STAGE_PROJECT}
+  oc expose dc/petclinic --port=8080 -n ${DEV_PROJECT}
+  oc expose svc/petclinic -n ${DEV_PROJECT}
+  oc set probe dc/petclinic --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
+  oc set probe dc/petclinic --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
+  oc rollout cancel dc/petclinic -n ${STAGE_PROJECT}
 
   # stage project
-  oc expose dc/tasks --port=8080 -n ${STAGE_PROJECT}
-  oc expose svc/tasks -n ${STAGE_PROJECT}
-  oc set probe dc/tasks --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
-  oc set probe dc/tasks --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
-  oc rollout cancel dc/tasks -n ${DEV_PROJECT}
+  oc expose dc/petclinic --port=8080 -n ${STAGE_PROJECT}
+  oc expose svc/petclinic -n ${STAGE_PROJECT}
+  oc set probe dc/petclinic --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
+  oc set probe dc/petclinic --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
+  oc rollout cancel dc/petclinic -n ${DEV_PROJECT}
 
   # deploy gogs
   HOSTNAME=$(oc get route jenkins -o template --template='{{.spec.host}}' | sed "s/jenkins-${APPDEV_NAMESPACE}.//g")
@@ -212,16 +212,56 @@ function deploy() {
 
   oc set resources dc/nexus --requests=cpu=200m --limits=cpu=2
 
+  oc apply -f codeready-workspaces-operator.yaml
+
+  sleep 2
+
+  oc rollout status deploy/codeready-operator -w
+
+  sleep 2
+
+  oc apply -f che-cluster.yaml
+
+  while [ -z "$(oc describe CheCluster | egrep 'Che\s+Cluster\s+Running:\s+Available')" ]
+  do
+    echo
+    echo 'waiting for Che Cluster status to be Available...'
+    oc describe CheCluster | egrep 'Che\s+Cluster\s+Running:'
+    sleep 2
+  done
+
+  oc rollout status deploy/postgres -w
+  oc rollout status deploy/keycloak -w
+  oc rollout status deploy/codeready -w
+  oc rollout status deploy/devfile-registry -w
+  oc rollout status deploy/plugin-registry -w
+
   oc label dc sonarqube "app.kubernetes.io/part-of"="sonarqube" --overwrite
   oc label dc sonardb "app.kubernetes.io/part-of"="sonarqube" --overwrite
   oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
   oc label dc nexus "app.kubernetes.io/part-of"="nexus" --overwrite
   oc label dc gogs "app.kubernetes.io/part-of"="gogs" --overwrite
   oc label dc gogs-postgresql "app.kubernetes.io/part-of"="gogs" --overwrite
+  oc label deploy codeready-operator "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  oc label deploy codeready "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  oc label deploy devfile-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  oc label deploy plugin-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  oc label deploy postgres "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  oc label deploy keycloak "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
 
   sleep 2
 
-  oc $ARG_OC_OPS new-app -f appdev-infra.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -n appdev-$PRJ_SUFFIX 
+  oc $ARG_OC_OPS new-app -f appdev-infra.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -n appdev-$PRJ_SUFFIX
+
+  while [ -z "$(oc get job appdev-demo-installer | grep '1/1')" ]
+  do
+    echo
+    echo 'waiting for the job appdev-demo-installer to be complete...'
+    oc get job appdev-demo-installer
+    sleep 2
+  done
+
+  oc new-build http://gogs:3000/gogs/spring-petclinic
 }
 
 function make_idle() {
