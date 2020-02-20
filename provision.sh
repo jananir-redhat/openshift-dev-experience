@@ -251,7 +251,9 @@ function deploy() {
 
   sleep 2
 
-  oc $ARG_OC_OPS new-app -f appdev-infra.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -n appdev-$PRJ_SUFFIX
+  WEBHOOK_SECRET=$(openssl rand -hex 4)
+
+  oc $ARG_OC_OPS new-app -f appdev-infra.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -p WEBHOOK_SECRET=$WEBHOOK_SECRET -n appdev-$PRJ_SUFFIX
 
   while [ -z "$(oc get job appdev-demo-installer | grep '1/1')" ]
   do
@@ -261,7 +263,7 @@ function deploy() {
     sleep 2
   done
 
-  oc new-build http://gogs:3000/gogs/spring-petclinic
+  oc $ARG_OC_OPS new-build -f build-config.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -p WEBHOOK_SECRET=$WEBHOOK_SECRET -n appdev-$PRJ_SUFFIX
 }
 
 function make_idle() {

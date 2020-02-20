@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Template
+labels:
+  template: appdev
+  group: appdev
+metadata:
+  annotations:
+    iconClass: icon-jenkins
+    tags: instant-app,jenkins,gogs,nexus,appdev
+  name: appdev
+message: "Use the following credentials for login:\nJenkins: use your OpenShift credentials\nNexus: admin/admin123\nSonarQube: admin/admin\nGogs Git Server: gogs/gogs"
+parameters:
+- displayName: DEV project name
+  value: dev
+  name: DEV_PROJECT
+  required: true
+- displayName: STAGE project name
+  value: stage
+  name: STAGE_PROJECT
+  required: true
+- displayName: Ephemeral
+  description: Use no persistent storage for Gogs and Nexus
+  value: "true"
+  name: EPHEMERAL
+  required: true
+- description: Webhook secret
+  from: '[a-zA-Z0-9]{8}'
+  generate: expression
+  name: WEBHOOK_SECRET
+  required: true
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  apiVersion: build.openshift.io/v1
+  metadata:
+    name: spring-petclinic
+    labels:
+      build: spring-petclinic
+      app: cicd-pipeline
+      name: cicd-pipeline
+  spec:
+    nodeSelector: {}
+    output: {}
+    resources: {}
+    successfulBuildsHistoryLimit: 5
+    failedBuildsHistoryLimit: 5
+    strategy:
+      type: JenkinsPipeline
+      jenkinsPipelineStrategy:
+        env:
+        - name: DEV_PROJECT
+          value: ${DEV_PROJECT}
+        - name: STAGE_PROJECT
+          value: ${STAGE_PROJECT}
+        jenkinsfilePath: Jenkinsfile
+    postCommit: {}
+    source:
+      type: Git
+      git:
+        uri: >-
+          http://gogs:3000/gogs/spring-petclinic
+        ref: master
+    triggers:
+      - type: GitHub
+        github:
+          secret: ${WEBHOOK_SECRET}
+      - type: Generic
+        generic:
+          secret: ${WEBHOOK_SECRET}
+      - type: ConfigChange
+    runPolicy: Serial
