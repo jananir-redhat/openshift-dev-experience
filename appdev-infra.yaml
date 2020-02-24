@@ -106,7 +106,7 @@ objects:
             {
               "type": "gogs",
               "config": {
-                "url": "https://openshift.default.svc.cluster.local/apis/build.openshift.io/v1/namespaces/$APPDEV_NAMESPACE/buildconfigs/tasks-pipeline/webhooks/${WEBHOOK_SECRET}/generic",
+                "url": "https://openshift.default.svc.cluster.local/apis/build.openshift.io/v1/namespaces/$APPDEV_NAMESPACE/buildconfigs/spring-petclinic/webhooks/${WEBHOOK_SECRET}/generic",
                 "content_type": "json"
               },
               "events": [

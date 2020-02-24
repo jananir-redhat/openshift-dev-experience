@@ -138,6 +138,8 @@ function deploy() {
     oc $ARG_OC_OPS adm pod-network join-projects --to=appdev-$PRJ_SUFFIX dev-$PRJ_SUFFIX stage-$PRJ_SUFFIX >/dev/null 2>&1
   fi
 
+  oc adm policy add-scc-to-user privileged -z default
+
   sleep 2
 
   if [ "${EPHEMERAL}" == "true" ] ; then
@@ -146,8 +148,11 @@ function deploy() {
     oc new-app jenkins-persistent -n appdev-$PRJ_SUFFIX
   fi
 
-  oc set resources dc/jenkins --limits=cpu=2,memory=2Gi --requests=cpu=100m,memory=512Mi 
-  oc label dc jenkins app=jenkins --overwrite 
+  oc set resources dc/jenkins --limits=cpu=2,memory=2Gi --requests=cpu=100m,memory=512Mi
+  oc set env dc jenkins INSTALL_PLUGINS=jacoco:latest #ansicolor:latest,greenballs:latest,slack:latest,groovy-postbuild:latest,linenumbers:latest,htmlpublisher:latest
+  oc label dc jenkins app=jenkins --overwrite
+  oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
+
 
   # setup dev env
   oc import-image redhat-openjdk-18/openjdk18-openshift --from=registry.access.redhat.com/redhat-openjdk-18/openjdk18-openshift --confirm -n ${DEV_PROJECT}
@@ -192,17 +197,12 @@ function deploy() {
         --param=HOSTNAME=$GOGS_HOSTNAME \
         --param=SKIP_TLS_VERIFY=true
   fi
-  
-  sleep 5
 
-  if [ "${EPHEMERAL}" == "true" ] ; then
-    oc new-app -f https://raw.githubusercontent.com/siamaksade/sonarqube/master/sonarqube-template.yml --param=SONARQUBE_MEMORY_LIMIT=2Gi
-  else
-    oc new-app -f https://raw.githubusercontent.com/siamaksade/sonarqube/master/sonarqube-persistent-template.yml --param=SONARQUBE_MEMORY_LIMIT=2Gi
-  fi
+  oc label dc gogs "app.kubernetes.io/part-of"="gogs" --overwrite
+  oc label dc gogs-postgresql "app.kubernetes.io/part-of"="gogs" --overwrite
 
-  oc set resources dc/sonardb --limits=cpu=200m,memory=512Mi --requests=cpu=50m,memory=128Mi
-  oc set resources dc/sonarqube --limits=cpu=1,memory=2Gi --requests=cpu=50m,memory=128Mi
+  helm install sonarqube stable/sonarqube
+  oc apply -f sonarqube-route.yaml
 
   if [ "${EPHEMERAL}" == "true" ] ; then
     oc new-app -f https://raw.githubusercontent.com/OpenShiftDemos/nexus/master/nexus3-template.yaml --param=NEXUS_VERSION=3.13.0 --param=MAX_MEMORY=2Gi
@@ -211,6 +211,22 @@ function deploy() {
   fi
 
   oc set resources dc/nexus --requests=cpu=200m --limits=cpu=2
+  oc label dc nexus "app.kubernetes.io/part-of"="nexus" --overwrite
+
+  WEBHOOK_SECRET=$(openssl rand -hex 4)
+
+  oc $ARG_OC_OPS new-app -f appdev-infra.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -p WEBHOOK_SECRET=$WEBHOOK_SECRET -n appdev-$PRJ_SUFFIX
+
+  while [ -z "$(oc get job appdev-demo-installer | grep '1/1')" ]
+  do
+    echo
+    echo 'waiting for the job appdev-demo-installer to be complete...'
+    oc get job appdev-demo-installer
+    sleep 2
+  done
+
+  oc $ARG_OC_OPS new-app -f build-config.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -p WEBHOOK_SECRET=$WEBHOOK_SECRET -n appdev-$PRJ_SUFFIX
+
 
   oc apply -f codeready-workspaces-operator.yaml
 
@@ -236,34 +252,12 @@ function deploy() {
   oc rollout status deploy/devfile-registry -w
   oc rollout status deploy/plugin-registry -w
 
-  oc label dc sonarqube "app.kubernetes.io/part-of"="sonarqube" --overwrite
-  oc label dc sonardb "app.kubernetes.io/part-of"="sonarqube" --overwrite
-  oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
-  oc label dc nexus "app.kubernetes.io/part-of"="nexus" --overwrite
-  oc label dc gogs "app.kubernetes.io/part-of"="gogs" --overwrite
-  oc label dc gogs-postgresql "app.kubernetes.io/part-of"="gogs" --overwrite
   oc label deploy codeready-operator "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
   oc label deploy codeready "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
   oc label deploy devfile-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
   oc label deploy plugin-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
   oc label deploy postgres "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
   oc label deploy keycloak "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
-
-  sleep 2
-
-  WEBHOOK_SECRET=$(openssl rand -hex 4)
-
-  oc $ARG_OC_OPS new-app -f appdev-infra.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -p WEBHOOK_SECRET=$WEBHOOK_SECRET -n appdev-$PRJ_SUFFIX
-
-  while [ -z "$(oc get job appdev-demo-installer | grep '1/1')" ]
-  do
-    echo
-    echo 'waiting for the job appdev-demo-installer to be complete...'
-    oc get job appdev-demo-installer
-    sleep 2
-  done
-
-  oc $ARG_OC_OPS new-build -f build-config.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -p WEBHOOK_SECRET=$WEBHOOK_SECRET -n appdev-$PRJ_SUFFIX
 }
 
 function make_idle() {

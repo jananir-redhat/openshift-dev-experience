@@ -1,0 +1,22 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: sonarqube-sonarqube
+  namespace: appdev-opentlc
+  labels:
+    app: sonarqube
+  annotations:
+    openshift.io/host.generated: 'true'
+spec:
+  host: >-
+    sonarqube-appdev-opentlc.apps.cluster-tysons-7509.tysons-7509.example.opentlc.com
+  to:
+    kind: Service
+    name: sonarqube-sonarqube
+    weight: 100
+  port:
+    targetPort: 9000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
