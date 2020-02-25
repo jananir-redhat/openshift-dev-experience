@@ -169,15 +169,15 @@ function deploy() {
   # dev project
   oc expose dc/petclinic --port=8080 -n ${DEV_PROJECT}
   oc expose svc/petclinic -n ${DEV_PROJECT}
-  oc set probe dc/petclinic --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
-  oc set probe dc/petclinic --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${DEV_PROJECT}
+  oc set probe dc/petclinic --readiness --get-url=http://:8080/ --initial-delay-seconds=90 --failure-threshold=10 --period-seconds=10 --timeout-seconds=3 -n ${DEV_PROJECT}
+  oc set probe dc/petclinic --liveness  --get-url=http://:8080/ --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 --timeout-seconds=3 -n ${DEV_PROJECT}
   oc rollout cancel dc/petclinic -n ${STAGE_PROJECT}
 
   # stage project
   oc expose dc/petclinic --port=8080 -n ${STAGE_PROJECT}
   oc expose svc/petclinic -n ${STAGE_PROJECT}
-  oc set probe dc/petclinic --readiness --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=30 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
-  oc set probe dc/petclinic --liveness  --get-url=http://:8080/ws/demo/healthcheck --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 -n ${STAGE_PROJECT}
+  oc set probe dc/petclinic --readiness --get-url=http://:8080/ --initial-delay-seconds=90 --failure-threshold=10 --period-seconds=10 --timeout-seconds=3 -n ${STAGE_PROJECT}
+  oc set probe dc/petclinic --liveness  --get-url=http://:8080/ --initial-delay-seconds=180 --failure-threshold=10 --period-seconds=10 --timeout-seconds=3 -n ${STAGE_PROJECT}
   oc rollout cancel dc/petclinic -n ${DEV_PROJECT}
 
   # deploy gogs
