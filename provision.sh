@@ -201,7 +201,7 @@ function deploy() {
   oc label dc gogs "app.kubernetes.io/part-of"="gogs" --overwrite
   oc label dc gogs-postgresql "app.kubernetes.io/part-of"="gogs" --overwrite
 
-  helm install sonarqube stable/sonarqube
+  helm install sonarqube stable/sonarqube -f charts/sonarqube/values.yaml
   oc apply -f sonarqube-route.yaml
 
   if [ "${EPHEMERAL}" == "true" ] ; then
