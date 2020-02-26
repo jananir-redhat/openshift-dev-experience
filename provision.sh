@@ -153,6 +153,7 @@ function deploy() {
   oc label dc jenkins app=jenkins --overwrite
   oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
 
+  oc apply -f jenkins-secret.yaml
 
   # setup dev env
   oc import-image redhat-openjdk-18/openjdk18-openshift --from=registry.access.redhat.com/redhat-openjdk-18/openjdk18-openshift --confirm -n ${DEV_PROJECT}
@@ -318,6 +319,15 @@ if [ "$LOGGEDIN_USER" == 'system:admin' ] && [ -z "$ARG_USERNAME" ] ; then
     echo "--user must be provided when running $ARG_COMMAND as 'system:admin'"
     exit 255
   fi
+fi
+
+
+if [[ ! -e jenkins-secret.yaml ]]; then
+  echo "jenkins-secret.yaml does not exist! please create an image pull secret:
+  https://access.redhat.com/terms-based-registry/
+  
+  make sure the secret is named: jenkins-pull-secret"
+  exit 255
 fi
 
 START=`date +%s`
