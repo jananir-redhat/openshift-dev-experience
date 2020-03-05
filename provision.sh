@@ -149,7 +149,7 @@ function deploy() {
   fi
 
   oc set resources dc/jenkins --limits=cpu=2,memory=2Gi --requests=cpu=100m,memory=512Mi
-  oc set env dc jenkins INSTALL_PLUGINS=jacoco:latest #ansicolor:latest,greenballs:latest,slack:latest,groovy-postbuild:latest,linenumbers:latest,htmlpublisher:latest
+  oc set env dc jenkins INSTALL_PLUGINS=antisamy-markup-formatter:1.6,ansicolor:0.6.2,greenballs:1.15,slack:2.28,badge:1.7,groovy-postbuild:2.5,linenumbers:1.2,jacoco:3.0.5
   oc label dc jenkins app=jenkins --overwrite
   oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
 
