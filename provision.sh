@@ -149,8 +149,7 @@ function deploy() {
   fi
 
   oc set resources dc/jenkins --limits=cpu=2,memory=2Gi --requests=cpu=100m,memory=512Mi
-  oc set env dc jenkins INSTALL_PLUGINS=antisamy-markup-formatter:1.6,ansicolor:0.6.2,greenballs:1.15,slack:2.28,badge:1.7,groovy-postbuild:2.5,linenumbers:1.2,jacoco:3.0.5
-  oc label dc jenkins app=jenkins --overwrite
+  oc set env dc jenkins INSTALL_PLUGINS=mailer:1.30,apache-httpcomponents-client-4-api:4.5.10-2.0,jsch:0.1.55.2,git-client:3.2.1,subversion:2.13.1,script-security:1.71,ssh-credentials:1.18.1,credentials:2.3.3,branch-api:2.0.20,cloudbees-folder:6.9,workflow-job:2.29,workflow-cps:2.80,workflow-scm-step:2.10,trilead-api:1.0.5,jira:3.0.13,git:4.2.2,antisamy-markup-formatter:1.6,display-url-api:2.3.2,slack:2.28,ansicolor:0.6.2,token-macro:2.12,linenumbers:1.2,plain-credentials:1.7,greenballs:1.15,jacoco:3.0.5,workflow-step-api:2.22,groovy-postbuild:2.5,badge:1.7,blueocean-rest-impl:1.10.2,credentials-binding:1.19,workflow-multibranch:2.20,pipeline-input-step:2.8,pipeline-stage-step:2.3,pipeline-model-declarative-agent:1.1.1,pipeline-graph-analysis:1.7,pipeline-rest-api:2.10,openshift-sync:1.0.44,openshift-login:1.0.23,openshift-client:1.0.32
   oc label dc jenkins "app.kubernetes.io/part-of"="jenkins" --overwrite
 
   oc apply -f jenkins-secret.yaml
