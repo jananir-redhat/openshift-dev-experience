@@ -203,6 +203,7 @@ function deploy() {
 
   helm install sonarqube stable/sonarqube -f charts/sonarqube/values.yaml
   oc apply -f sonarqube-route.yaml
+  oc label all -l release=sonarqube "app.kubernetes.io/part-of"="sonarqube" --overwrite
 
   if [ "${EPHEMERAL}" == "true" ] ; then
     oc new-app -f https://raw.githubusercontent.com/OpenShiftDemos/nexus/master/nexus3-template.yaml --param=NEXUS_VERSION=3.13.0 --param=MAX_MEMORY=2Gi
@@ -228,36 +229,36 @@ function deploy() {
   oc $ARG_OC_OPS new-app -f build-config.yaml -p DEV_PROJECT=dev-$PRJ_SUFFIX -p STAGE_PROJECT=stage-$PRJ_SUFFIX -p EPHEMERAL=$ARG_EPHEMERAL -p WEBHOOK_SECRET=$WEBHOOK_SECRET -n appdev-$PRJ_SUFFIX
 
 
-  oc apply -f codeready-workspaces-operator.yaml
+  # oc apply -f codeready-workspaces-operator.yaml
 
-  sleep 2
+  # sleep 2
 
-  oc rollout status deploy/codeready-operator -w
+  # oc rollout status deploy/codeready-operator -w
 
-  sleep 2
+  # sleep 2
 
-  oc apply -f che-cluster.yaml
+  # oc apply -f che-cluster.yaml
 
-  while [ -z "$(oc describe CheCluster | egrep 'Che\s+Cluster\s+Running:\s+Available')" ]
-  do
-    echo
-    echo 'waiting for Che Cluster status to be Available...'
-    oc describe CheCluster | egrep 'Che\s+Cluster\s+Running:'
-    sleep 2
-  done
+  # while [ -z "$(oc describe CheCluster | egrep 'Che\s+Cluster\s+Running:\s+Available')" ]
+  # do
+  #   echo
+  #   echo 'waiting for Che Cluster status to be Available...'
+  #   oc describe CheCluster | egrep 'Che\s+Cluster\s+Running:'
+  #   sleep 2
+  # done
 
-  oc rollout status deploy/postgres -w
-  oc rollout status deploy/keycloak -w
-  oc rollout status deploy/codeready -w
-  oc rollout status deploy/devfile-registry -w
-  oc rollout status deploy/plugin-registry -w
+  # oc rollout status deploy/postgres -w
+  # oc rollout status deploy/keycloak -w
+  # oc rollout status deploy/codeready -w
+  # oc rollout status deploy/devfile-registry -w
+  # oc rollout status deploy/plugin-registry -w
 
-  oc label deploy codeready-operator "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
-  oc label deploy codeready "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
-  oc label deploy devfile-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
-  oc label deploy plugin-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
-  oc label deploy postgres "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
-  oc label deploy keycloak "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  # oc label deploy codeready-operator "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  # oc label deploy codeready "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  # oc label deploy devfile-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  # oc label deploy plugin-registry "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  # oc label deploy postgres "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
+  # oc label deploy keycloak "app.kubernetes.io/part-of"="codeready-workspaces" --overwrite
 }
 
 function make_idle() {
